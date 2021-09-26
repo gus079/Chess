@@ -1,0 +1,11 @@
+---
+title: "Chess"
+author: "GS"
+date: "26/9/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = F, warning = F, comment = "", fig.align = "center" )
+```
+
