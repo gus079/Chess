@@ -9,3 +9,277 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE, message = F, warning = F, comment = "", fig.align = "center" )
 ```
 
+```{r, packages}
+library(tidyverse)
+library(patchwork)
+
+theme_set(theme_bw())
+```
+
+General Info
+
+This is a set of just over 20,000 games collected from a selection of users on the site Lichess.org, and how to collect more. I will also upload more games in the future as I collect them. This set contains the:
+
+- Game ID;
+- Rated (T/F);
+- Start Time;
+- End Time;
+- Number of Turns;
+- Game Status;
+- Winner;
+- Time Increment;
+- White Player ID;
+- White Player Rating;
+- Black Player ID;
+- Black Player Rating;
+- All Moves in Standard Chess Notation;
+- Opening Eco (Standardised Code for any given opening, list here);
+- Opening Name;
+- Opening Ply (Number of moves in the opening phase)
+
+For each of these separate games from Lichess. I collected this data using the Lichess API, which enables collection of any given users game history. The difficult part was collecting usernames to use, however the API also enables dumping of all users in a Lichess team. There are several teams on Lichess with over 1,500 players, so this proved an effective way to get users to collect games from.
+
+Possible Uses
+
+Lots of information is contained within a single chess game, let alone a full dataset of multiple games. It is primarily a game of patterns, and data science is all about detecting patterns in data, which is why chess has been one of the most invested in areas of AI in the past. This dataset collects all of the information available from 20,000 games and presents it in a format that is easy to process for analysis of, for example, what allows a player to win as black or white, how much meta (out-of-game) factors affect a game, the relationship between openings and victory for black and white and more.
+
+```{r, data}
+games <- read_csv("games.csv")
+
+#cleaning variables
+chess <- games %>% 
+  select(rated, turns, victory_status, winner, white_rating, black_rating, moves, opening_eco, opening_name, opening_ply)
+chess
+
+```
+
+```{r}
+chess <- chess %>% 
+  mutate(victory_status = as.factor(victory_status),
+         winner = as.factor(winner),
+         opening_eco = as.factor(opening_eco))
+
+summary(chess)
+```
+I filtered games with more than 4 turns
+```{r}
+chess <- chess %>% 
+  filter(turns > 4)
+```
+
+## EDA
+
+### Turns
+```{r, turns}
+# ggplot(chess, aes(turns)) + 
+#   geom_histogram(fill = "lightgray", color = "black") + 
+#   scale_x_log10()
+# 
+# ggplot(chess, aes(turns)) + 
+#   geom_boxplot()
+
+# 289 games with more than 150 moves
+chess %>% 
+  filter(turns > 150) %>% 
+  count()
+
+chess <- chess %>% 
+  filter(turns < 150)
+
+
+turns1 <- chess %>% 
+  ggplot(aes(turns)) + 
+  geom_boxplot() + 
+  coord_flip() + 
+  labs(x = "Turns")
+
+turns2 <- chess %>% 
+  ggplot(aes(turns)) + 
+  geom_histogram(fill = "lightgray", color = "black") + 
+  geom_vline(xintercept = mean(chess$turns), color = "blue")
+
+turns1 + turns2 + plot_annotation("Global Turns analysis")
+
+```
+### Victory status
+```{r, victory status}
+chess %>% 
+  group_by(victory_status) %>% 
+  summarise(counts = n()) %>% 
+  ggplot(aes(x = reorder(victory_status, -counts), y = counts)) + 
+  geom_bar(stat = "identity", fill = "#0073C2FF") + 
+  geom_text(aes(label = counts), vjust = -.3) + 
+  labs(x = NULL, y = "Counts", title = "Victory Status")
+
+```
+### Winner
+```{r, winner}
+chess %>% 
+  group_by(winner) %>% 
+  summarise(counts = n()) %>% 
+  ggplot(aes(x = reorder(winner, -counts), y = counts)) + 
+  geom_bar(stat = "identity", fill = "darkred") + 
+  geom_text(aes(label = counts), vjust = -.3) + 
+  labs(x = NULL, y = "Counts", title = "Winner side")
+```
+
+### Ratings
+
+```{r, ratings}
+t.test(chess$white_rating, chess$black_rating)
+
+chess %>% 
+  pivot_longer(cols = white_rating:black_rating, values_to = "value") %>% 
+  ggplot(aes(value, color = name)) + 
+  geom_density() + 
+  labs(x = NULL, color = NULL, title = "Analysis of ratings by color") + 
+  scale_color_discrete(labels = c("Black", "White"))
+
+```
+
+### Relation between ratings (white and black)
+```{r, rating, cache=TRUE}
+with(chess, cor.test(white_rating, black_rating))
+
+rating1 <- chess %>% 
+  ggplot(aes(white_rating, black_rating)) + 
+  geom_bin2d() + 
+  labs(x = NULL, y = "Black Ratings")
+
+rating2 <- chess %>% 
+  ggplot(aes(white_rating, black_rating, color = victory_status)) + 
+  geom_point(alpha = .3) + 
+  geom_smooth(se = F) + 
+  labs(x = "White Ratings", y = "Black Ratings", color = "Victory Status")
+
+rating1 / rating2
+
+
+```
+
+### Number of Turns according to winning color
+```{r, cache=TRUE}
+ggplot(chess, aes(winner, turns, color = winner)) + 
+  geom_point() + 
+  geom_jitter(alpha = .2) + 
+  labs(x = "Winner", y = "Turns", title = "# of Turns according to winning color") + 
+  theme(legend.position = "none")
+```
+### Victory status according to numerb of turns and color
+```{r}
+vic1 <- ggplot(chess, aes(victory_status, turns, color = victory_status)) + 
+  geom_point() + 
+  geom_jitter(alpha = .2) + 
+  labs(x = "Victory Status", y = "Turns", title = "# of Turns according to victory status", color = NULL) +
+  theme(legend.position = "none")
+
+vic2 <- chess %>% 
+  filter(winner != "draw") %>% 
+  ggplot(aes(victory_status, turns, color = victory_status)) + 
+  geom_point() + 
+  geom_jitter(alpha = .2) + 
+  labs(x = "Victory Status", y = "Turns", title = "# of Turns according to victory status and color", color = NULL) +
+  theme(legend.position = "none") + 
+  facet_wrap(.~ winner)
+
+vic1 / vic2
+
+```
+
+```{r}
+chess %>% 
+  filter(winner != "draw") %>% 
+  ggplot(aes(winner, fill = victory_status)) + 
+  geom_bar(position = "dodge") + 
+  labs(x = "Winner", fill = "Victory Status", y = "Count", title = "Reasons of winning by color")
+ 
+```
+```{r}
+chess
+```
+
+```{r}
+draw <- 
+  chess %>% 
+  filter(white_rating == black_rating) %>% 
+  mutate(higher_rating = "draw")
+  
+# chess %>% 
+#   filter(white_rating != black_rating) %>% 
+#   mutate(higher_rating = if_else(white_rating > black_rating, "white_high", "black_high")) %>% 
+#   bind_rows(draw) %>% 
+#   ggplot(aes(winner, higher_rating, color = higher_rating)) + 
+#   geom_jitter()
+
+chess %>% 
+  filter(white_rating != black_rating) %>% 
+  mutate(higher_rating = if_else(white_rating > black_rating, "white_high", "black_high")) %>% 
+  bind_rows(draw) %>% 
+  ggplot(aes(winner, fill = higher_rating)) + 
+  geom_bar(position = 'dodge')
+
+winner_by_rating <- chess %>% 
+  filter(white_rating != black_rating) %>% 
+  mutate(higher_rating = if_else(white_rating > black_rating, "white_high", "black_high")) %>% 
+  bind_rows(draw)
+  
+table(winner_by_rating$winner, winner_by_rating$higher_rating)
+
+
+```
+
+
+
+
+
+
+
+## Modeling
+
+### Logistic Regression
+
+```{r, Logistic Regression}
+chess %>% 
+  filter(winner != "draw") %>% 
+  glm(winner ~ rated + turns + white_rating + black_rating, data = ., family = "binomial") %>% 
+  summary()
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
